@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>課堂點名系統</title>
+    <title>課堂點名系統 V2</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: -apple-system, sans-serif; text-align: center; padding: 20px; background-color: #f4f7f6; }
@@ -27,26 +27,25 @@
     
     <div id="reader"></div>
     <div id="status"></div>
+    <button id="reset-btn" style="margin-top:20px; display:none; padding:10px;" onclick="location.reload()">重新掃描</button>
 </div>
 
 <script>
-    // --- 1. 多教室座標配置區 ---
+    // --- 1. 配置區 ---
     const ROOMS = {
-        "1": { name: "個經二", lat: 25.123132, lng: 121.720685 },
+        "1": { name: "個經二", lat: 25.123178, lng: 121.720471 },
         "2": { name: "休閒經濟", lat: 25.0478, lng: 121.5170 },
         "3": { name: "產經", lat: 24.1477, lng: 120.6736 },
         "4": { name: "績效評估", lat: 22.6273, lng: 120.3014 }
     };
 
-    // 取得網址參數 (例如 ?room=1)
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('room') || "1"; // 若沒填則預設為教室 1
-    const currentRoom = ROOMS[roomId] || ROOMS["1"];
-    
-    document.getElementById('room-name').innerText = currentRoom.name;
-
     const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbze4JDl868qh5He6n52ukqCWLyejrazSU5VZPmJlUrbnTqcLcAwwDQa3kB1JCl9S-72RA/exec"; 
-    const MAX_DISTANCE = 100; // 允許範圍 (公尺)
+    const MAX_DISTANCE = 100; // 縮小半徑至 100 公尺防代簽
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('room') || "1";
+    const currentRoom = ROOMS[roomId] || ROOMS["1"];
+    document.getElementById('room-name').innerText = currentRoom.name;
 
     // --- 2. 距離計算 ---
     function getDistance(lat1, lon1, lat2, lon2) {
@@ -57,13 +56,22 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // --- 3. 掃描成功處理 ---
+    // --- 3. 掃描邏輯 ---
     function onScanSuccess(decodedText) {
         const sid = document.getElementById('studentId').value;
         const sname = document.getElementById('studentName').value;
 
         if (!sid || !sname) {
             alert("請先輸入學號和姓名！");
+            return;
+        }
+
+        // 【防代簽 1：檢查此手機今天是否簽到過】
+        const today = new Date().toDateString();
+        const lastCheckin = localStorage.getItem('last_checkin_' + roomId);
+        if (lastCheckin === today) {
+            showStatus("❌ 這台手機今天已完成簽到，不可重複簽到他人學號。", "error");
+            html5QrcodeScanner.clear();
             return;
         }
 
@@ -74,17 +82,18 @@
             const dist = getDistance(currentRoom.lat, currentRoom.lng, pos.coords.latitude, pos.coords.longitude);
             
             if (dist <= MAX_DISTANCE) {
-                uploadData(sid, sname, decodedText, Math.round(dist));
+                uploadData(sid, sname, decodedText, Math.round(dist), today);
             } else {
-                showStatus(`❌ 距離太遠！您目前在 ${currentRoom.name} 範圍外 (距離 ${Math.round(dist)}m)`, "error");
+                showStatus(`❌ 距離太遠！您在 ${currentRoom.name} 範圍外 (${Math.round(dist)}m)`, "error");
+                document.getElementById('reset-btn').style.display = 'inline-block';
             }
         }, (err) => {
             showStatus("❌ 錯誤：請開啟 GPS 定位權限", "error");
         }, { enableHighAccuracy: true });
     }
 
-    function uploadData(id, name, qr, dist) {
-        showStatus("正在上傳簽到資料...", "");
+    function uploadData(id, name, qr, dist, todayKey) {
+        showStatus("正在上傳資料...", "");
         fetch(SCRIPT_URL, {
             method: 'POST',
             mode: 'no-cors',
@@ -96,7 +105,9 @@
                 distance: dist 
             })
         }).then(() => {
-            showStatus(`✅ ${name} 簽到成功！<br>教室：${currentRoom.name}`, "success");
+            // 【防代簽 2：成功後標記此設備今天已簽到】
+            localStorage.setItem('last_checkin_' + roomId, todayKey);
+            showStatus(`✅ ${name} 簽到成功！<br>設備已鎖定，今日無法再次簽到。`, "success");
         });
     }
 
@@ -107,21 +118,14 @@
         statusDiv.className = type;
     }
 
-    // --- 4. 初始化掃描器 (指定後鏡頭) ---
+    // --- 4. 啟動相機 (優先後鏡頭) ---
     const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
         fps: 10, 
         qrbox: 250,
-        // 強制優先使用後置鏡頭
-        videoConstraints: {
-            facingMode: { exact: "environment" }
-        }
+        videoConstraints: { facingMode: "environment" } 
     });
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 
 </body>
 </html>
-
-
-
-
