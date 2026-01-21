@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS + QR Code 點名系統</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; text-align: center; padding: 20px; background-color: #f4f7f6; }
+        .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input { width: 80%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 5px; }
+        #reader { width: 100%; margin-top: 20px; border-radius: 10px; overflow: hidden; }
+        #status { margin-top: 20px; padding: 15px; border-radius: 8px; font-weight: bold; display: none; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>課堂簽到</h2>
+    <div id="input-section">
+        <input type="text" id="studentId" placeholder="請輸入學號">
+        <input type="text" id="studentName" placeholder="請輸入姓名">
+        <p style="font-size: 0.8em; color: #666;">輸入完成後，請對準教室 QR Code</p>
+    </div>
+    
+    <div id="reader"></div>
+    <div id="status"></div>
+</div>
+
+<script>
+    // --- 配置區 ---
+    const CONFIG = {
+        scriptUrl: "https://script.google.com/macros/s/AKfycby6czFqHF2m1nPD75yk38koDB0DPvOHAilSmkjP9QR1c5YqJv-zGoy-523zh6ijG_0Osw/exec", // 貼上你的網址
+        targetLat: 25.123168,  // 教室緯度
+        targetLng: 121.720196, // 教室經度
+        maxDistance: 100     // 允許範圍 (公尺)
+    };
+
+    const statusDiv = document.getElementById('status');
+
+    function getDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function onScanSuccess(decodedText) {
+        const sid = document.getElementById('studentId').value;
+        const sname = document.getElementById('studentName').value;
+
+        if (!sid || !sname) {
+            alert("請先填寫學號與姓名再掃描！");
+            return;
+        }
+
+        html5QrcodeScanner.clear(); // 停止相機
+        showStatus("驗證位置中...", "");
+
+        navigator.geolocation.getCurrentPosition((pos) => {
+            const dist = getDistance(CONFIG.targetLat, CONFIG.targetLng, pos.coords.latitude, pos.coords.longitude);
+            
+            if (dist <= CONFIG.maxDistance) {
+                uploadData(sid, sname, decodedText, Math.round(dist));
+            } else {
+                showStatus(`簽到失敗：距離教室太遠 (${Math.round(dist)}m)`, "error");
+            }
+        }, (err) => {
+            showStatus("錯誤：請允許 GPS 定位權限", "error");
+        }, { enableHighAccuracy: true });
+    }
+
+    function uploadData(id, name, qr, dist) {
+        showStatus("正在傳送簽到資料...", "");
+        
+        fetch(CONFIG.scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ studentId: id, studentName: name, qrData: qr, distance: dist })
+        }).then(() => {
+            showStatus(`✅ 簽到成功！<br>學號：${id}<br>已記錄至系統`, "success");
+        }).catch(e => {
+            showStatus("網路錯誤，請重試", "error");
+        });
+    }
+
+    function showStatus(msg, type) {
+        statusDiv.style.display = "block";
+        statusDiv.innerHTML = msg;
+        statusDiv.className = type;
+    }
+
+    const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+
+</body>
+</html>
