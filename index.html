@@ -48,8 +48,8 @@
         "4": { name: "績效評估", lat: 24.74609, lng: 121.74567 }
     };
 
-    const SCRIPT_URL = "你的_GOOGLE_SCRIPT_網址"; 
-    const MAX_DISTANCE = 50; // 允許範圍 (公尺)
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxo0pa9VoyjEV-HGvQbluoLZEGUMl97TulTm3pkMn02h-ZmqnfT2euT2WiAxIjV0KmR8A/exec"; 
+    const MAX_DISTANCE = 100; // 允許範圍 (公尺)
 
     const urlParams = new URLSearchParams(window.location.search);
     const roomId = urlParams.get('room') || "1";
@@ -133,5 +133,6 @@
 
 </body>
 </html>
+
 
 
